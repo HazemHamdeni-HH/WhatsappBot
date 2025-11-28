@@ -1,0 +1,13 @@
+# Dépendances de Node.js
+node_modules/
+
+# Fichiers de session WhatsApp (NE JAMAIS PARTAGER)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Fichiers temporaires et logs
+logs/
+*.log
+
+# Dossier public généré pour le QR code
+public/
