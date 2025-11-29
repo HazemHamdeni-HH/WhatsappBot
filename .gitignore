@@ -1,5 +1,6 @@
 # Dépendances de Node.js
 node_modules/
+package-lock.json
 
 # Fichiers de session WhatsApp (NE JAMAIS PARTAGER)
 .wwebjs_auth/

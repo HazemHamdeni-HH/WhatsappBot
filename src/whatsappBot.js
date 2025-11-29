@@ -11,7 +11,16 @@ class WhatsAppBot {
         this.excelReader = new ExcelReader(excelPath);
 
         this.commandHandler = new CommandHandler(this.excelReader);
+        this.dataPath = path.join(__dirname, '..', 'data');
+        this.tempPath = path.join(__dirname, '..', 'temp');
+        this.pendingNewDataPath = null;
 
+        if (!fs.existsSync(this.dataPath)) {
+            fs.mkdirSync(this.dataPath);
+        }
+        if (!fs.existsSync(this.tempPath)) {
+            fs.mkdirSync(this.tempPath);
+        }
         this.client = new Client({
             authStrategy: new LocalAuth({
                 clientId: 'session-bot',
@@ -48,7 +57,6 @@ class WhatsAppBot {
 
         this.client.on('ready', () => {
             console.log('Client WhatsApp prêt!');
-
             const myNumber = this.client.info.wid._serialized;
             console.log(`Bot démarré. Conversation initiée avec : ${myNumber}`);
 
@@ -69,18 +77,30 @@ class WhatsAppBot {
         });
 
         this.client.on('message_create', async (message) => {
+            console.log(`--- NOUVEAU MESSAGE ---`);
+            console.log(`Body: "${message.body}" | From: ${message.from} | FromMe: ${message.fromMe} | Type: ${message.type}`);
+            console.log(`Has Media: ${message.hasMedia}`);
+            console.log(`---------------------`);
 
-            console.log(`Message créé: "${message.body}" | De: ${message.from} | Est de moi: ${message.fromMe} | Type: ${message.type}`);
-
-            if (message.type === 'chat') {
-
-                console.log(`>>> MESSAGE DÉTECTÉ : ${message.body}`);
-
+            if (message.hasMedia && message.type === 'document') {
+                console.log(">>> CONDITION 'document' VRAIE");
+                if (message.body === 'data.xlsx') {
+                    console.log(">>> NOM DU FICHIER 'data.xlsx' CORRECT");
+                    await this.handleNewDataFile(message);
+                } else {
+                    console.log(`>>> NOM DU FICHIER INCORRECT: ${message.body}`);
+                }
+            }
+            else if (message.type === 'chat') {
+                console.log(">>> CONDITION 'chat' VRAIE");
                 if (!message.body.startsWith('!')) {
                     return;
                 }
 
-                console.log(`>>> COMMANDE DÉTECTÉE : ${message.body}`);
+                if (message.body.toLowerCase() === '!loadnewdata') {
+                    await this.handleLoadNewData(message);
+                    return;
+                }
 
                 try {
                     const response = this.commandHandler.handleCommand(message.body, message);
@@ -105,6 +125,52 @@ class WhatsAppBot {
                 this.restartClient();
             }
         });
+    }
+    async handleNewDataFile(message) {
+        try {
+            console.log('Fichier data.xlsx reçu. Téléchargement...');
+            const mediaData = await message.downloadMedia();
+            const newFilePath = path.join(this.tempPath, 'data_new.xlsx');
+            fs.writeFileSync(newFilePath, mediaData.data, 'base64');
+
+            this.pendingNewDataPath = newFilePath;
+            console.log(`Fichier téléchargé et sauvegardé dans ${newFilePath}`);
+
+            await message.reply('✅ Fichier `data.xlsx` reçu et prêt à être chargé.\nTapez `!loadnewdata` pour finaliser la mise à jour.');
+        } catch (error) {
+            console.error('Erreur lors du téléchargement du fichier:', error);
+            await message.reply('❌ Erreur lors du téléchargement du fichier. Veuillez réessayer.');
+        }
+    }
+
+    async handleLoadNewData(message) {
+        if (!this.pendingNewDataPath) {
+            await message.reply('❌ Aucun nouveau fichier `data.xlsx` en attente. Veuillez d\'abord envoyer un fichier.');
+            return;
+        }
+
+        try {
+            const finalDataPath = path.join(this.dataPath, 'data.xlsx');
+
+            if (fs.existsSync(finalDataPath)) {
+                console.log("Suppression de l'ancien fichier data.xlsx...");
+                fs.unlinkSync(finalDataPath);
+            }
+
+            console.log("Renommage du nouveau fichier en data.xlsx...");
+            fs.renameSync(this.pendingNewDataPath, finalDataPath);
+
+            this.pendingNewDataPath = null;
+
+            this.excelReader.reloadData();
+
+            console.log('Fichier de données mis à jour et rechargé avec succès.');
+            await message.reply('✅ Données mises à jour avec succès ! Le bot utilise maintenant le nouveau fichier.');
+
+        } catch (error) {
+            console.error('Erreur lors du chargement des nouvelles données:', error);
+            await message.reply('❌ Une erreur est survenue lors de la mise à jour des données. Vérifiez les permissions des dossiers.');
+        }
     }
 
     restartClient() {
